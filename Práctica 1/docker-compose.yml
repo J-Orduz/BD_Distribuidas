@@ -1,0 +1,67 @@
+name: BD Distribuidas
+
+networks:
+  cockroach-net:
+    driver: bridge
+
+volumes:
+  roach1-data:
+  roach2-data:
+  cloudbeaver-data:
+
+services:
+  roach1:
+    image: cockroachdb/cockroach:v26.1.0
+    container_name: roach1
+    hostname: roach1
+    networks:
+      - cockroach-net
+    ports:
+      - "26257:26257"
+      - "8080:8080"
+    volumes:
+      - roach1-data:/cockroach/cockroach-data
+    command: start --insecure --join=roach1,roach2 --listen-addr=0.0.0.0:26257 --advertise-addr=roach1:26257
+
+  roach2:
+    image: cockroachdb/cockroach:v26.1.0
+    container_name: roach2
+    hostname: roach2
+    networks:
+      - cockroach-net
+    ports:
+      - "26258:26257"
+    volumes:
+      - roach2-data:/cockroach/cockroach-data
+    command: start --insecure --join=roach1,roach2 --listen-addr=0.0.0.0:26257 --advertise-addr=roach2:26257
+    depends_on:
+      - roach1
+
+  init-cluster:
+    image: cockroachdb/cockroach:v26.1.0
+    networks:
+      - cockroach-net
+    volumes:
+      - ./BD.sql:/BD.sql:ro
+    entrypoint: [ "/bin/bash", "-c" ]
+    command: 
+      - |
+        /cockroach/cockroach init --insecure --host=roach1:26257
+        sleep 2
+        /cockroach/cockroach sql --insecure --host=roach1:26257 --database=defaultdb < /BD.sql
+    depends_on:
+      - roach1
+      - roach2
+
+  cloudbeaver:
+    image: dbeaver/cloudbeaver:latest
+    container_name: cloudbeaver
+    networks:
+      - cockroach-net
+    ports:
+      - "8978:8978"
+    volumes:
+      - cloudbeaver-data:/opt/cloudbeaver/workspace
+    depends_on:
+      - roach1
+      - roach2
